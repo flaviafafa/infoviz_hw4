@@ -12,6 +12,10 @@
             margin: 0;
             font-family: 'Merriweather', serif;
             background-color: #f9fcf0;
+            display: flex;
+            justify-items: center;
+            flex-direction: column;
+            align-items: center;
         }
 
         #container{
@@ -153,11 +157,25 @@
     fill: #333;
     font-size: 10px;
 }
+
+.font-size{
+    color:#2a7a3b;
+    font-weight: bold;
+    margin:0;
+    font-size: 14px;
+}
     </style>
 </head>
 
 <body>
     <h1 id="main-title">Let's learn about palm tree species!</h1>
+    <div style="display: flex; flex-direction: row;width:900px; padding-top: 10px;">
+        <p class="font-size">Subfamily</p>
+        <p class="font-size" style="padding-left: 130px;">Climbability</p>
+        <p class="font-size" style="padding-left: 120px;">Growth Form</p>
+        <p class="font-size" style="padding-left: 110px;">Armature</p>
+        <p class="font-size" style="padding-left: 140px;">Stem Type</p>
+    </div>
     <div id="container">
         <div id="sankey-container">
             <svg id="sankey" width="900" height="400"></svg>
