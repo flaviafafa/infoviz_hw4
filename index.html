@@ -13,30 +13,14 @@
             font-family: 'Merriweather', serif;
         }
 
-        #controls {
-            padding: 10px 20px;
-            background-color: #f0f0f0;
-            border-bottom: 1px solid #ccc;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
         #container {
             display: flex;
             flex-direction: row;
             height: 900px;
-            width: 100%;
         }
 
         #sankey-container {
-            flex: 0 0 70%;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        #histogram-container {
-            flex: 1;
+            flex: 0 0 100%;
             padding: 20px;
             box-sizing: border-box;
         }
@@ -44,13 +28,6 @@
         #sankey {
             width: 100%;
             height: 100%;
-        }
-
-        #histogram {
-            width: 100%;
-            height: 100%;
-            background-color: #f9f9f9;
-            border-left: 1px solid #ccc;
         }
 
         .node rect {
@@ -88,73 +65,91 @@
         .node rect.highlight {
             fill-opacity: 1;
         }
+
+        #node-tooltip, #link-tooltip {
+            background: #fff9e6;
+            border: 2px solid #ffd700;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Merriweather', serif;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            min-width: 160px;
+            position: absolute;
+        }
+
+        #node-tooltip.show, #link-tooltip.show {
+            opacity: 1;
+        }
+
+        #node-tooltip em, #link-tooltip em {
+            color: #2a7a3b;
+            font-style: normal;
+            font-weight: 700;
+        }
     </style>
 </head>
 
 <body>
-    <div id="controls">
-        <label for="dataSlider">Number of entries:</label>
-        <span id="minVal">0</span>
-        <input type="range" id="dataSlider" min="10" max="1000" step="10" value="100">
-        <span id="maxVal">1000</span>
-        <span id="currentVal">(100)</span>
-    </div>
-
     <div id="container">
         <div id="sankey-container">
-            <svg id="sankey" width="1200" height="800"></svg>
-        </div>
-        <div id="histogram-container">
-            <svg id="histogram" width="400" height="600"></svg>
+            <svg id="sankey" width="900" height="450"></svg>
         </div>
     </div>
+
+    <div id="node-tooltip"></div>
+    <div id="link-tooltip"></div>
 
     <script>
         const svg = d3.select("#sankey");
         const width = +svg.attr("width");
         const height = +svg.attr("height");
+        const nodeTooltip = d3.select("#node-tooltip");
+        const linkTooltip = d3.select("#link-tooltip");
         const sankeyLayout = d3.sankey()
-            .nodeWidth(100)
+            .nodeWidth(90)
             .nodePadding(20)
             .extent([[1, 1], [width - 1, height - 6]]);
-        const color = d3.scaleOrdinal(d3.schemePastel1);
+        const color = d3.scaleOrdinal(d3.schemeSet3);
 
         let fullData = [];
+        let nodeTimeout, linkTimeout;
+        const tooltipDelay = 200;
 
         d3.json("palmtrees_cleaned.json").then(data => {
             fullData = data;
-            document.getElementById("minVal").textContent = "10";
-            document.getElementById("maxVal").textContent = data.length;
-            document.getElementById("dataSlider").max = data.length;
-            drawSankey(+document.getElementById("dataSlider").value);
+            drawSankey();
         });
 
-        document.getElementById("dataSlider").addEventListener("input", function () {
-            const value = +this.value;
-            document.getElementById("currentVal").textContent = `(${value})`;
-            drawSankey(value);
-        });
-
-        function drawSankey(entryCount) {
+        function drawSankey() {
             svg.selectAll("*").remove();
-            const limitedData = fullData.slice(0, entryCount);
             const nodesMap = new Map();
             const linksMap = new Map();
 
             function addLink(sourceRaw, targetRaw, sourceType, targetType) {
                 if (!sourceRaw || !targetRaw) return;
-                const sourceID = `${sourceType}: ${sourceRaw}`;
-                const targetID = `${targetType}: ${targetRaw}`;
-                nodesMap.set(sourceID, sourceRaw);
-                nodesMap.set(targetID, targetRaw);
+                
+                const mapValues = (type, value) => {
+                    if (type === 'stem_armed') return value === 'armed' ? 'armed stem' : 'non-armed stem';
+                    if (type === 'stem_solitary') return value === 'solitary' ? 'solitary stem' : 'cluster stems';
+                    return value;
+                };
+
+                const sourceID = `${sourceType}: ${mapValues(sourceType, sourceRaw)}`;
+                const targetID = `${targetType}: ${mapValues(targetType, targetRaw)}`;
+                nodesMap.set(sourceID, mapValues(sourceType, sourceRaw));
+                nodesMap.set(targetID, mapValues(targetType, targetRaw));
                 const key = `${sourceID}->${targetID}`;
                 linksMap.set(key, (linksMap.get(key) || 0) + 1);
             }
 
-            limitedData.forEach(tree => {
-                addLink(tree.palm_subfamily, tree.palm_tribe, 'subfamily', 'tribe');
-                addLink(tree.palm_tribe, tree.erect, 'tribe', 'erect');
-                addLink(tree.erect, tree.stem_solitary, 'erect', 'solitary');
+            fullData.forEach(tree => {
+                addLink(tree.palm_subfamily, tree.climbing, 'palm_subfamily', 'climbing');
+                addLink(tree.climbing, tree.erect, 'climbing', 'erect');
+                addLink(tree.erect, tree.stem_armed, 'erect', 'stem_armed');
+                addLink(tree.stem_armed, tree.stem_solitary, 'stem_armed', 'stem_solitary');
             });
 
             const nodeList = Array.from(nodesMap.entries()).map(([id, displayName]) => ({ id, displayName }));
@@ -175,17 +170,55 @@
             sankeyLayout(sankeyData);
 
             const linkPaths = svg.append("g")
-                .selectAll("path")
-                .data(sankeyData.links)
-                .enter().append("path")
-                .attr("class", "link")
-                .attr("d", d3.sankeyLinkHorizontal())
-                .attr("stroke", d => color(d.source.displayName))
-                .attr("stroke-width", d => Math.max(1, d.width))
-                .append("title")
-                .text(d => `${d.source.displayName} → ${d.target.displayName}\n${d.value}`);
+        .selectAll("path")
+        .data(sankeyData.links)
+        .enter().append("path")
+        .attr("class", "link")
+        .attr("d", d3.sankeyLinkHorizontal())
+        .attr("stroke", d => color(d.source.displayName))
+        .attr("stroke-width", d => Math.max(1, d.width))
+        .on("mouseover", function(event, d) {
+            clearTimeout(linkTimeout);
+            linkTimeout = setTimeout(() => {
+                const connectedNodes = new Set([d.source, d.target]);
+                const connectedLinks = new Set([d]);
+        
+                linkPaths.classed("highlight", l => connectedLinks.has(l))
+                    .classed("dimmed", l => !connectedLinks.has(l));
+                svg.selectAll(".node rect")
+                    .classed("highlight", n => connectedNodes.has(n))
+                    .classed("dimmed", n => !connectedNodes.has(n));
 
-            const links = svg.selectAll(".link");
+                        const total = fullData.length;
+                        const percentage = ((d.value / total) * 100).toFixed(1);
+                        const sourceValue = d.source.displayName;
+                        const targetValue = d.target.displayName;
+
+                        linkTooltip
+                            .style("left", `${event.pageX + 15}px`)
+                            .style("top", `${event.pageY - 10}px`)
+                            .html(`
+                                <div style="color: #856404; font-weight: 700;">${percentage}%</div>
+                                <div style="font-size: 0.9em;">${getLinkText(sourceValue, targetValue)}</div>
+                            `)
+                            .classed("show", true);
+                    }, tooltipDelay);
+                })
+                .on("mousemove", function(event) {
+                    linkTooltip
+                        .style("left", `${event.pageX + 15}px`)
+                        .style("top", `${event.pageY - 10}px`);
+                })
+                .on("mouseout", function() {
+                    clearTimeout(linkTimeout);
+            linkPaths.classed("highlight", false)
+                .classed("dimmed", false);
+            svg.selectAll(".node rect")
+                .classed("highlight", false)
+                .classed("dimmed", false);
+            linkTooltip.classed("show", false);
+                });
+
             const nodesGroup = svg.append("g")
                 .selectAll("g")
                 .data(sankeyData.nodes)
@@ -197,8 +230,81 @@
                 .attr("height", d => d.y1 - d.y0)
                 .attr("width", d => d.x1 - d.x0)
                 .attr("fill", d => color(d.displayName))
-                .append("title")
-                .text(d => `${d.displayName}\n${d.value}`);
+                .on("mouseover", function(event, d) {
+            clearTimeout(nodeTimeout);
+            nodeTimeout = setTimeout(() => {
+                const [field, value] = d.id.split(': ');
+                const count = fullData.filter(tree => {
+                    const treeValue = getMappedValue(field, tree[field]);
+                    return treeValue === value;
+                }).length;
+                const total = fullData.length;
+                const percent = ((count / total) * 100).toFixed(1);
+
+                // Collect all related nodes and links
+                const relatedNodes = new Set([d]);
+                const relatedLinks = new Set();
+
+                function traverseUp(node) {
+                    node.targetLinks.forEach(link => {
+                        if (!relatedLinks.has(link)) {
+                            relatedLinks.add(link);
+                            const sourceNode = link.source;
+                            if (!relatedNodes.has(sourceNode)) {
+                                relatedNodes.add(sourceNode);
+                                traverseUp(sourceNode);
+                            }
+                        }
+                    });
+                }
+
+                function traverseDown(node) {
+                    node.sourceLinks.forEach(link => {
+                        if (!relatedLinks.has(link)) {
+                            relatedLinks.add(link);
+                            const targetNode = link.target;
+                            if (!relatedNodes.has(targetNode)) {
+                                relatedNodes.add(targetNode);
+                                traverseDown(targetNode);
+                            }
+                        }
+                    });
+                }
+
+                traverseUp(d);
+                traverseDown(d);
+
+                // Highlight related elements
+                linkPaths.classed("highlight", l => relatedLinks.has(l))
+                    .classed("dimmed", l => !relatedLinks.has(l));
+                svg.selectAll(".node rect")
+                    .classed("highlight", n => relatedNodes.has(n))
+                    .classed("dimmed", n => !relatedNodes.has(n));
+
+                nodeTooltip
+                    .style("left", `${event.pageX + 15}px`)
+                    .style("top", `${event.pageY - 10}px`)
+                    .html(`
+                        <div style="color: #856404; font-weight: 700;">${percent}%</div>
+                        <div style="font-size: 0.9em;">${getNodeText(field, value)}</div>
+                    `)
+                    .classed("show", true);
+            }, tooltipDelay);
+        })
+                .on("mousemove", function(event) {
+                    nodeTooltip
+                        .style("left", `${event.pageX + 15}px`)
+                        .style("top", `${event.pageY - 10}px`);
+                })
+                .on("mouseout", function() {
+                    clearTimeout(nodeTimeout);
+            linkPaths.classed("highlight", false)
+                .classed("dimmed", false);
+            svg.selectAll(".node rect")
+                .classed("highlight", false)
+                .classed("dimmed", false);
+            nodeTooltip.classed("show", false);
+                });
 
             nodesGroup.append("text")
                 .attr("x", 6)
@@ -207,60 +313,31 @@
                 .attr("text-anchor", "start")
                 .text(d => d.displayName);
 
-            function highlightConnectedNodesAndLinks(selectedNodeOrLink) {
-                const connectedNodes = new Set();
-                const connectedLinks = new Set();
-
-                function traverseForward(node) {
-                    node.sourceLinks.forEach(link => {
-                        connectedLinks.add(link);
-                        connectedNodes.add(link.target);
-                        traverseForward(link.target);
-                    });
-                }
-
-                function traverseBackward(node) {
-                    node.targetLinks.forEach(link => {
-                        connectedLinks.add(link);
-                        connectedNodes.add(link.source);
-                        traverseBackward(link.source);
-                    });
-                }
-
-                if (selectedNodeOrLink.source && selectedNodeOrLink.target) {
-                    connectedLinks.add(selectedNodeOrLink);
-                    connectedNodes.add(selectedNodeOrLink.source);
-                    connectedNodes.add(selectedNodeOrLink.target);
-                    traverseForward(selectedNodeOrLink.target);
-                    traverseBackward(selectedNodeOrLink.source);
-                } else {
-                    connectedNodes.add(selectedNodeOrLink);
-                    traverseForward(selectedNodeOrLink);
-                    traverseBackward(selectedNodeOrLink);
-                }
-
-                links.classed("highlight", d => connectedLinks.has(d))
-                    .classed("dimmed", d => !connectedLinks.has(d));
-                svg.selectAll(".node rect").classed("highlight", d => connectedNodes.has(d))
-                    .classed("dimmed", d => !connectedNodes.has(d));
+            function getMappedValue(field, value) {
+                const mappings = {
+                    'stem_armed': {
+                        'armed': 'armed stem',
+                        'non-armed': 'non-armed stem'
+                    },
+                    'stem_solitary': {
+                        'solitary': 'solitary stem',
+                        'non-solitary': 'cluster stems'
+                    }
+                };
+                return mappings[field]?.[value] || value;
             }
 
-            links.on("click", function (event, clickedLink) {
-                highlightConnectedNodesAndLinks(clickedLink);
-                event.stopPropagation();
-            });
+            function getNodeText(field, value) {
+                const verb = field.startsWith('stem') ? 'have' : 'are';
+                return `of palm tree species ${verb} <em>${value}</em>.`;
+            }
 
-            svg.selectAll(".node").on("click", function (event, clickedNode) {
-                highlightConnectedNodesAndLinks(clickedNode);
-                event.stopPropagation();
-            });
-
-            svg.on("click", function () {
-                links.classed("highlight", false).classed("dimmed", false);
-                svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
-            });
+            function getLinkText(source, target) {
+                const sourceVerb = source.includes('stem') ? 'have' : 'are';
+                const targetVerb = target.includes('stem') ? 'have' : 'are';
+                return `of species that ${sourceVerb} <em>${source}</em><br>also ${targetVerb} <em>${target}</em>.`;
+            }
         }
     </script>
 </body>
-
 </html>
