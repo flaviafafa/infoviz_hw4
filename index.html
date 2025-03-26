@@ -166,7 +166,20 @@
             font-size: 13px;
         }
 
+        .no-data-label {
+            font-size: 14px;
+        }
 
+        .x-axis-label, .y-axis-label {
+            font-size: 11px;
+        }
+
+        .column-title {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #2a7a3b;
+            text-anchor: middle;
+        }
     </style>
 </head>
 
@@ -186,8 +199,8 @@
     </div>
 
     <div id="histograms-container">
-        <svg id="height-histogram" class="histogram" width="450" height="250"></svg>
-        <svg id="diameter-histogram" class="histogram" width="450" height="250"></svg>
+        <svg id="height-histogram" class="histogram" width="450" height="260"></svg>
+        <svg id="diameter-histogram" class="histogram" width="450" height="260"></svg>
     </div>
 
     <div id="node-tooltip"></div>
@@ -209,9 +222,9 @@
         let nodeTimeout, linkTimeout;
         const tooltipDelay = 200;
 
-        const histogramMargins = { top: 20, right: 20, bottom: 30, left: 40 };
+        const histogramMargins = { top: 20, right: 20, bottom: 40, left: 45 };
         const histogramWidth = 450 - histogramMargins.left - histogramMargins.right;
-        const histogramHeight = 250 - histogramMargins.top - histogramMargins.bottom;
+        const histogramHeight = 260 - histogramMargins.top - histogramMargins.bottom;
 
         function prepareHistograms() {
             // Height histogram setup
@@ -225,7 +238,7 @@
                 .attr("class", "column-title")
                 .attr("x", histogramWidth / 2)
                 .attr("y", -5)
-                .text("Maximum Stem Height (m)");
+                .text("Max. Stem Height (m)");
 
             // Diameter histogram setup
             const diameterSvg = d3.select("#diameter-histogram")
@@ -238,12 +251,12 @@
                 .attr("class", "column-title")
                 .attr("x", histogramWidth / 2)
                 .attr("y", -5)
-                .text("Maximum Stem Diameter (cm)");
+                .text("Max. Stem Diameter (cm)");
         }
 
-        function updateHistograms(data) {
-            updateHistogram(data, 'max_stem_height_m', '#height-histogram');
-            updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram');
+        function updateHistograms(data, context) {
+            updateHistogram(data, 'max_stem_height_m', '#height-histogram', context);
+            updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram', context);
         }
 
         // Helper for mapping labels back to values
@@ -255,17 +268,30 @@
             return mappings[field]?.[displayValue] || displayValue;
         }   
 
-        function updateHistogram(data, field, selector) {
+        function updateHistogram(data, field, selector, context) {
             const svg = d3.select(selector);
             const g = svg.select("g");
             const validData = data.filter(d => d[field] != null);
             const values = validData.map(d => +d[field])
 
-            g.selectAll(".bar").remove();
+            // Clear existing elements
+            g.selectAll(".bar, .no-data-label").remove();
+
+            // Update title based on context
+            const title = g.select(".column-title")
+                .text(getHistogramTitle(field, context));
 
             // Clear if no data
             if (values.length === 0) {
-                // add label
+                console.log("I am here")
+                g.append("text")
+                    .attr("class", "no-data-label")
+                    .attr("x", histogramWidth/2)
+                    .attr("y", histogramHeight/2)
+                    .attr("text-anchor", "middle")
+                    .style("fill", "#666")
+                    .style("font-style", "italic")
+                    .text("No Data Available");
                 return;
             }
 
@@ -291,12 +317,13 @@
             
             var bins = histogram(values);
 
+            const maxFrequency = d3.max(bins, d => d.length);
             const y = d3.scaleLinear()
-                .domain([0, d3.max(bins, d => d.length)])
+                .domain([0, maxFrequency])
                 .range([histogramHeight, 0]);
 
             const yAxis = d3.axisLeft(y)
-                .ticks(5)
+                .ticks(d3.min([5, maxFrequency]))
                 .tickFormat(d3.format("d"));
             let yAxisGroup = g.select(".y-axis");
             if (!yAxisGroup.empty()) {
@@ -307,6 +334,26 @@
                     .call(yAxis);
             }
 
+            // Add axis title
+            if (g.select(".x-axis-label").empty()) {
+                g.append("text")
+                    .attr("class", "x-axis-label")
+                    .attr("transform", `translate(${histogramWidth/2},${histogramHeight+35})`)
+                    .style("text-anchor", "middle")
+                    .text(field === 'max_stem_height_m' ? "Meters" : "Centimeters");
+            }
+
+            if (g.select(".y-axis-label").empty()) {
+                g.append("text")
+                    .attr("class", "y-axis-label")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", -histogramMargins.left + 10)
+                    .attr("x", -histogramHeight/2)
+                    .style("text-anchor", "middle")
+                    .text("Frequency");
+            }
+
+            // Draw bins
             g.selectAll("rect")
                 .data(bins)
                 .enter()
@@ -318,6 +365,29 @@
                 .style("fill", "#69b3a2")
                 .style("opacity", 0.8)
                 .attr("class", "bar")
+        }
+
+        function capitalizeFirst(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        // Helper function for dynamic titles
+        function getHistogramTitle(field, context) {
+            const baseTitle = field === 'max_stem_height_m' 
+                ? "Max. Stem Height (m)" 
+                : "Max. Stem Diameter (cm)";
+    
+            if (!context) return baseTitle;
+    
+            if (context.type === 'node') {
+                return capitalizeFirst(`${context.value} trees: ${baseTitle}`);
+            }
+    
+            if (context.type === 'link') {
+                return capitalizeFirst(`${context.source} & ${context.target} trees: ${baseTitle}`);
+            }
+    
+            return baseTitle;
         }
 
         function drawSankey() {
@@ -375,16 +445,16 @@
                 .attr("stroke", d => color(d.source.displayName))
                 .attr("stroke-width", d => Math.max(1, d.width))
                 .on("mouseover", function(event, d) {
-                clearTimeout(linkTimeout);
-                linkTimeout = setTimeout(() => {
-                    const connectedNodes = new Set([d.source, d.target]);
-                    const connectedLinks = new Set([d]);
+                    clearTimeout(linkTimeout);
+                    linkTimeout = setTimeout(() => {
+                        const connectedNodes = new Set([d.source, d.target]);
+                        const connectedLinks = new Set([d]);
         
-                linkPaths.classed("highlight", l => connectedLinks.has(l))
-                    .classed("dimmed", l => !connectedLinks.has(l));
-                svg.selectAll(".node rect")
-                    .classed("highlight", n => connectedNodes.has(n))
-                    .classed("dimmed", n => !connectedNodes.has(n));
+                        linkPaths.classed("highlight", l => connectedLinks.has(l))
+                            .classed("dimmed", l => !connectedLinks.has(l));
+                        svg.selectAll(".node rect")
+                            .classed("highlight", n => connectedNodes.has(n))
+                            .classed("dimmed", n => !connectedNodes.has(n));
 
                         const total = fullData.length;
                         const percentage = ((d.value / total) * 100).toFixed(1);
@@ -413,7 +483,11 @@
                                 tree[sourceField] === rawSourceValue && 
                                 tree[targetField] === rawTargetValue
                             );
-                            updateHistograms(subset);
+                            updateHistograms(subset, {
+                                type: 'link',
+                                source: sourceDisplayValue,
+                                target: targetDisplayValue
+                            });
                         }, tooltipDelay);
                     })
                     .on("mousemove", function(event) {
@@ -505,7 +579,11 @@
 
                     const rawValue = getRawValue(field, value);
                     const subset = fullData.filter(tree => tree[field] === rawValue);
-                    updateHistograms(subset);
+                    updateHistograms(subset, { 
+                        type: 'node',
+                        value: value,
+                        field: field
+                    });
                 }, tooltipDelay);
             })
             .on("mousemove", function(event) {
