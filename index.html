@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>INFO4310-HW4</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Merriweather', serif;
+        }
+
+        #controls {
+            padding: 10px 20px;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #container {
+            display: flex;
+            flex-direction: row;
+            height: 900px;
+            width: 100%;
+        }
+
+        #sankey-container {
+            flex: 0 0 70%;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #histogram-container {
+            flex: 1;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #sankey {
+            width: 100%;
+            height: 100%;
+        }
+
+        #histogram {
+            width: 100%;
+            height: 100%;
+            background-color: #f9f9f9;
+            border-left: 1px solid #ccc;
+        }
+
+        .node rect {
+            fill-opacity: 0.9;
+            shape-rendering: crispEdges;
+        }
+
+        .node text {
+            pointer-events: none;
+            font-size: 12px;
+        }
+
+        .link {
+            fill: none;
+            stroke-opacity: 0.4;
+            cursor: pointer;
+        }
+
+        .link:hover {
+            stroke-opacity: 0.7;
+        }
+
+        .link.highlight {
+            stroke-opacity: 0.8;
+        }
+
+        .link.dimmed {
+            stroke-opacity: 0.1;
+        }
+
+        .node rect.dimmed {
+            fill-opacity: 0.2;
+        }
+
+        .node rect.highlight {
+            fill-opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <label for="dataSlider">Number of entries:</label>
+        <span id="minVal">0</span>
+        <input type="range" id="dataSlider" min="10" max="1000" step="10" value="100">
+        <span id="maxVal">1000</span>
+        <span id="currentVal">(100)</span>
+    </div>
+
+    <div id="container">
+        <div id="sankey-container">
+            <svg id="sankey" width="1200" height="800"></svg>
+        </div>
+        <div id="histogram-container">
+            <svg id="histogram" width="400" height="600"></svg>
+        </div>
+    </div>
+
+    <script>
+        const svg = d3.select("#sankey");
+        const width = +svg.attr("width");
+        const height = +svg.attr("height");
+        const sankeyLayout = d3.sankey()
+            .nodeWidth(100)
+            .nodePadding(20)
+            .extent([[1, 1], [width - 1, height - 6]]);
+        const color = d3.scaleOrdinal(d3.schemePastel1);
+
+        let fullData = [];
+
+        d3.json("palmtrees_cleaned.json").then(data => {
+            fullData = data;
+            document.getElementById("minVal").textContent = "10";
+            document.getElementById("maxVal").textContent = data.length;
+            document.getElementById("dataSlider").max = data.length;
+            drawSankey(+document.getElementById("dataSlider").value);
+        });
+
+        document.getElementById("dataSlider").addEventListener("input", function () {
+            const value = +this.value;
+            document.getElementById("currentVal").textContent = `(${value})`;
+            drawSankey(value);
+        });
+
+        function drawSankey(entryCount) {
+            svg.selectAll("*").remove();
+            const limitedData = fullData.slice(0, entryCount);
+            const nodesMap = new Map();
+            const linksMap = new Map();
+
+            function addLink(sourceRaw, targetRaw, sourceType, targetType) {
+                if (!sourceRaw || !targetRaw) return;
+                const sourceID = `${sourceType}: ${sourceRaw}`;
+                const targetID = `${targetType}: ${targetRaw}`;
+                nodesMap.set(sourceID, sourceRaw);
+                nodesMap.set(targetID, targetRaw);
+                const key = `${sourceID}->${targetID}`;
+                linksMap.set(key, (linksMap.get(key) || 0) + 1);
+            }
+
+            limitedData.forEach(tree => {
+                addLink(tree.palm_subfamily, tree.palm_tribe, 'subfamily', 'tribe');
+                addLink(tree.palm_tribe, tree.erect, 'tribe', 'erect');
+                addLink(tree.erect, tree.stem_solitary, 'erect', 'solitary');
+            });
+
+            const nodeList = Array.from(nodesMap.entries()).map(([id, displayName]) => ({ id, displayName }));
+            const nodeIndex = new Map(nodeList.map((node, i) => [node.id, i]));
+
+            const sankeyData = {
+                nodes: nodeList,
+                links: Array.from(linksMap.entries()).map(([key, value]) => {
+                    const [sourceID, targetID] = key.split('->');
+                    return {
+                        source: nodeIndex.get(sourceID),
+                        target: nodeIndex.get(targetID),
+                        value
+                    };
+                })
+            };
+
+            sankeyLayout(sankeyData);
+
+            const linkPaths = svg.append("g")
+                .selectAll("path")
+                .data(sankeyData.links)
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", d3.sankeyLinkHorizontal())
+                .attr("stroke", d => color(d.source.displayName))
+                .attr("stroke-width", d => Math.max(1, d.width))
+                .append("title")
+                .text(d => `${d.source.displayName} → ${d.target.displayName}\n${d.value}`);
+
+            const links = svg.selectAll(".link");
+            const nodesGroup = svg.append("g")
+                .selectAll("g")
+                .data(sankeyData.nodes)
+                .enter().append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            nodesGroup.append("rect")
+                .attr("height", d => d.y1 - d.y0)
+                .attr("width", d => d.x1 - d.x0)
+                .attr("fill", d => color(d.displayName))
+                .append("title")
+                .text(d => `${d.displayName}\n${d.value}`);
+
+            nodesGroup.append("text")
+                .attr("x", 6)
+                .attr("y", d => (d.y1 - d.y0) / 2)
+                .attr("dy", "0.35em")
+                .attr("text-anchor", "start")
+                .text(d => d.displayName);
+
+            function highlightConnectedNodesAndLinks(selectedNodeOrLink) {
+                const connectedNodes = new Set();
+                const connectedLinks = new Set();
+
+                function traverseForward(node) {
+                    node.sourceLinks.forEach(link => {
+                        connectedLinks.add(link);
+                        connectedNodes.add(link.target);
+                        traverseForward(link.target);
+                    });
+                }
+
+                function traverseBackward(node) {
+                    node.targetLinks.forEach(link => {
+                        connectedLinks.add(link);
+                        connectedNodes.add(link.source);
+                        traverseBackward(link.source);
+                    });
+                }
+
+                if (selectedNodeOrLink.source && selectedNodeOrLink.target) {
+                    connectedLinks.add(selectedNodeOrLink);
+                    connectedNodes.add(selectedNodeOrLink.source);
+                    connectedNodes.add(selectedNodeOrLink.target);
+                    traverseForward(selectedNodeOrLink.target);
+                    traverseBackward(selectedNodeOrLink.source);
+                } else {
+                    connectedNodes.add(selectedNodeOrLink);
+                    traverseForward(selectedNodeOrLink);
+                    traverseBackward(selectedNodeOrLink);
+                }
+
+                links.classed("highlight", d => connectedLinks.has(d))
+                    .classed("dimmed", d => !connectedLinks.has(d));
+                svg.selectAll(".node rect").classed("highlight", d => connectedNodes.has(d))
+                    .classed("dimmed", d => !connectedNodes.has(d));
+            }
+
+            links.on("click", function (event, clickedLink) {
+                highlightConnectedNodesAndLinks(clickedLink);
+                event.stopPropagation();
+            });
+
+            svg.selectAll(".node").on("click", function (event, clickedNode) {
+                highlightConnectedNodesAndLinks(clickedNode);
+                event.stopPropagation();
+            });
+
+            svg.on("click", function () {
+                links.classed("highlight", false).classed("dimmed", false);
+                svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
+            });
+        }
+    </script>
+</body>
+
+</html>
