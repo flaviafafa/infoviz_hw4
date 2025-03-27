@@ -461,8 +461,8 @@
                             .classed("highlight", n => connectedNodes.has(n))
                             .classed("dimmed", n => !connectedNodes.has(n));
 
-                        const total = fullData.length;
-                        const percentage = ((d.value / total) * 100).toFixed(1);
+                        const sourceTotal = d.source.value;
+                        const percentage = ((d.value / sourceTotal) * 100).toFixed(1);
                         const sourceValue = d.source.displayName;
                         const targetValue = d.target.displayName;
 
