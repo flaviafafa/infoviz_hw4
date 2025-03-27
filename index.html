@@ -178,7 +178,7 @@
 
 <body>
     <h1 id="main-title">Let's learn about 2000+ palm tree species!</h1>
-    <div style="display: flex; flex-direction: row; width:900px;">
+    <div style="display: flex; flex-direction: row; width: 900px;">
         <p class="subtitle" style="padding-left: 10px;">Subfamily</p>
         <p class="subtitle" style="padding-left: 125px;">Growth Habit <a href="#info_habit">[1]</a></p>
         <p class="subtitle" style="padding-left: 95px;">Growth Form <a href="#info_form">[2]</a></p>
@@ -222,7 +222,6 @@
         const color = d3.scaleOrdinal(d3.schemeSet3);
 
 
-
         let fullData = [];
         let nodeTimeout, linkTimeout;
         const tooltipDelay = 200;
@@ -231,12 +230,9 @@
         const histogramWidth = 450 - histogramMargins.left - histogramMargins.right;
         const histogramHeight = 250 - histogramMargins.top - histogramMargins.bottom;
 
-        let nodeHovering = false;
-        let linkHovering = false;
-
-
+        // Initialize histograms
         function prepareHistograms() {
-            // Height histogram setup
+            // Height histogram 
             const heightSvg = d3.select("#height-histogram")
                 .attr("width", histogramWidth + histogramMargins.left + histogramMargins.right)
                 .attr("height", histogramHeight + histogramMargins.top + histogramMargins.bottom)
@@ -249,7 +245,7 @@
                 .attr("y", -10)
                 .text("Max. Stem Height (m)");
 
-            // Diameter histogram setup
+            // Diameter histogram
             const diameterSvg = d3.select("#diameter-histogram")
                 .attr("width", histogramWidth + histogramMargins.left + histogramMargins.right)
                 .attr("height", histogramHeight + histogramMargins.top + histogramMargins.bottom)
@@ -263,10 +259,13 @@
                 .text("Max. Stem Diameter (cm)");
         }
 
+
+        // Update histograms
         function updateHistograms(data, context) {
             updateHistogram(data, 'max_stem_height_m', '#height-histogram', context, '#10b981');
             updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram', context, '#65a30d');
         }
+
 
         // Helper for mapping labels back to values
         function getRawValue(field, displayValue) {
@@ -275,17 +274,16 @@
                 'stem_solitary': { 'solitary stem': 'solitary', 'cluster stems': 'non-solitary' }
             };
             return mappings[field]?.[displayValue] || displayValue;
-        }   
+        }
+        
 
+        // Update histogram upon request
         function updateHistogram(data, field, selector, context, theme_color) {
             const svg = d3.select(selector);
             const g = svg.select("g");
             const validData = data.filter(d => d[field] != null);
             const values = validData.map(d => +d[field])
 
-            console.log(values)
-
-            // Clear existing elements
             g.selectAll(".bar, .no-data-label").remove();
 
             // Update title based on context
@@ -324,7 +322,7 @@
                 .domain([d3.min(values), d3.max(values)])
                 .range([0, histogramWidth]);
 
-            // Update X axis
+            // Update axis
             const xAxis = d3.axisBottom(x);
             let xAxisGroup = g.select(".x-axis");
             if (!xAxisGroup.empty()) {
@@ -360,7 +358,6 @@
                     .call(yAxis);
             }
 
-            // Add axis title
             if (g.select(".x-axis-label").empty()) {
                 g.append("text")
                     .attr("class", "x-axis-label")
@@ -380,23 +377,24 @@
             }
 
             // Draw bins
-            g.selectAll("rect")
+            g.selectAll(".bar")
                 .data(bins)
-                .enter()
-                .append("rect")
-                .attr("x", 1)
-                .attr("transform", function(d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
-                .attr("width", function(d) { return d3.max([x(d.x1) - x(d.x0) - 1, 0]); })
-                .attr("height", function(d) { return histogramHeight - y(d.length); })
-                .style("fill", theme_color)
-                .style("opacity", 0.8)
+                .join("rect")
                 .attr("class", "bar")
+                .attr("transform", d => `translate(${x(d.x0)},${y(d.length)})`)
+                .attr("x", 1)
+                .attr("width", d => Math.max(x(d.x1) - x(d.x0) - 1, 0))
+                .attr("height", d => histogramHeight - y(d.length))
+                .style("fill", theme_color)
+                .style("opacity", 0.8);
         }
 
         function capitalizeFirst(str) {
             return str.charAt(0).toUpperCase() + str.slice(1);
         }
 
+
+        // Draw sankey
         function drawSankey() {
             svg.selectAll("*").remove();
             const nodesMap = new Map();
@@ -453,9 +451,7 @@
                 .attr("stroke-width", d => Math.max(1, d.width))
                 .on("mouseover", function(event, d) {
                     clearTimeout(linkTimeout);
-                    linkHovering = true;
                     linkTimeout = setTimeout(() => {
-                        linkHovering = false;
                         const connectedNodes = new Set([d.source, d.target]);
                         const connectedLinks = new Set([d]);
         
@@ -479,41 +475,39 @@
                             `)
                             .classed("show", true);
 
-                            const sourceField = d.source.id.split(': ')[0];
-                            const targetField = d.target.id.split(': ')[0];
-                            const sourceDisplayValue = d.source.displayName;
-                            const targetDisplayValue = d.target.displayName;
+                        const sourceField = d.source.id.split(': ')[0];
+                        const targetField = d.target.id.split(': ')[0];
+                        const sourceDisplayValue = d.source.displayName;
+                        const targetDisplayValue = d.target.displayName;
 
-                            // Convert display values to raw values
-                            const rawSourceValue = getRawValue(sourceField, sourceDisplayValue);
-                            const rawTargetValue = getRawValue(targetField, targetDisplayValue);
+                        // Convert display values to raw values
+                        const rawSourceValue = getRawValue(sourceField, sourceDisplayValue);
+                        const rawTargetValue = getRawValue(targetField, targetDisplayValue);
 
-                            const subset = fullData.filter(tree => 
-                                tree[sourceField] === rawSourceValue && 
-                                tree[targetField] === rawTargetValue
-                            );
-                            updateHistograms(subset, {
-                                type: 'link',
-                                source: sourceDisplayValue,
-                                target: targetDisplayValue
-                            });
-                        }, tooltipDelay);
-                    })
-                    .on("mousemove", function(event) {
-                        linkTooltip
-                            .style("left", `${event.pageX + 15}px`)
-                            .style("top", `${event.pageY - 10}px`);
-                    })
-                    .on("mouseout", function () {
-                        clearTimeout(linkTimeout);
-                        if (!linkHovering) {
-                            updateHistograms(fullData);
-                        }
+                        const subset = fullData.filter(tree => 
+                            tree[sourceField] === rawSourceValue && 
+                            tree[targetField] === rawTargetValue
+                        );
+                        updateHistograms(subset, {
+                            type: 'link',
+                            source: sourceDisplayValue,
+                            target: targetDisplayValue
+                        });
+                    }, tooltipDelay);
+                })
+                .on("mousemove", function(event) {
+                    linkTooltip
+                        .style("left", `${event.pageX + 15}px`)
+                        .style("top", `${event.pageY - 10}px`);
+                })
+                .on("mouseout", function () {
+                    clearTimeout(linkTimeout);
+                    updateHistograms(fullData);
 
-                        linkTooltip.classed("show", false);
-                        linkPaths.classed("highlight", false).classed("dimmed", false);
-                        svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
-                    });
+                    linkTooltip.classed("show", false);
+                    linkPaths.classed("highlight", false).classed("dimmed", false);
+                    svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
+                });
 
             const nodesGroup = svg.append("g")
                 .selectAll("g")
@@ -528,9 +522,7 @@
                 .attr("fill", d => color(d.displayName))
                 .on("mouseover", function(event, d) {
                     clearTimeout(nodeTimeout);
-                    nodeHovering = true;
                     nodeTimeout = setTimeout(() => {
-                        nodeHovering = false;
                         const [field, value] = d.id.split(': ');
                         const count = fullData.filter(tree => {
                             const treeValue = getMappedValue(field, tree[field]);
@@ -539,7 +531,6 @@
                         const total = fullData.length;
                         const percent = ((count / total) * 100).toFixed(1);
 
-                        // Collect all related nodes and links
                         const relatedNodes = new Set([d]);
                         const relatedLinks = new Set();
 
@@ -569,83 +560,82 @@
                             });
                         }
 
-                    traverseUp(d);
-                    traverseDown(d);
+                        traverseUp(d);
+                        traverseDown(d);
 
-                    // Highlight related elements
-                    linkPaths.classed("highlight", l => relatedLinks.has(l))
-                        .classed("dimmed", l => !relatedLinks.has(l));
-                    svg.selectAll(".node rect")
-                        .classed("highlight", n => relatedNodes.has(n))
-                        .classed("dimmed", n => !relatedNodes.has(n));
+                        // Highlight related elements
+                        linkPaths.classed("highlight", l => relatedLinks.has(l))
+                            .classed("dimmed", l => !relatedLinks.has(l));
+                        svg.selectAll(".node rect")
+                            .classed("highlight", n => relatedNodes.has(n))
+                            .classed("dimmed", n => !relatedNodes.has(n));
 
+                        nodeTooltip
+                            .style("left", `${event.pageX + 15}px`)
+                            .style("top", `${event.pageY - 10}px`)
+                            .html(`
+                                <div style="color: #856404; font-weight: 700;">${percent}%</div>
+                                <div style="font-size: 0.9em;">${getNodeText(field, value)}</div>
+                            `)
+                            .classed("show", true);
+
+                        const rawValue = getRawValue(field, value);
+                        const subset = fullData.filter(tree => tree[field] === rawValue);
+                        updateHistograms(subset, { 
+                            type: 'node',
+                            value: value,
+                            field: field
+                        });
+                    }, tooltipDelay);
+                })
+                .on("mousemove", function(event) {
                     nodeTooltip
                         .style("left", `${event.pageX + 15}px`)
-                        .style("top", `${event.pageY - 10}px`)
-                        .html(`
-                            <div style="color: #856404; font-weight: 700;">${percent}%</div>
-                            <div style="font-size: 0.9em;">${getNodeText(field, value)}</div>
-                        `)
-                        .classed("show", true);
-
-                    const rawValue = getRawValue(field, value);
-                    const subset = fullData.filter(tree => tree[field] === rawValue);
-                    updateHistograms(subset, { 
-                        type: 'node',
-                        value: value,
-                        field: field
-                    });
-                }, tooltipDelay);
-            })
-            .on("mousemove", function(event) {
-                nodeTooltip
-                    .style("left", `${event.pageX + 15}px`)
-                    .style("top", `${event.pageY - 10}px`);
-            })
-            .on("mouseout", function() {
-                clearTimeout(nodeTimeout);
-                if (!nodeHovering) {
+                        .style("top", `${event.pageY - 10}px`);
+                })
+                .on("mouseout", function() {
+                    clearTimeout(nodeTimeout);
                     updateHistograms(fullData);
-                }
  
-                nodeTooltip.classed("show", false);
-                linkPaths.classed("highlight", false).classed("dimmed", false);
-                svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
+                    nodeTooltip.classed("show", false);
+                    linkPaths.classed("highlight", false).classed("dimmed", false);
+                    svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
+                });
+
+                nodesGroup.append("text")
+                    .attr("x", 6)
+                    .attr("y", d => (d.y1 - d.y0) / 2)
+                    .attr("dy", "0.35em")
+                    .attr("text-anchor", "start")
+                    .each(function(d) {
+                        const text = d3.select(this);
+                        const label = d.displayName === "non-armed stem"
+                            ? ["non-armed", "stem"]
+                            : [d.displayName];
+
+                label.forEach((line, i) => {
+                    text.append("tspan")
+                        .attr("x", 6)
+                        .attr("dy", i === 0 ? -2 : "1.1em")
+                        .text(line);
+                });
             });
 
-            nodesGroup.append("text")
-                .attr("x", 6)
-                .attr("y", d => (d.y1 - d.y0) / 2)
-                .attr("dy", "0.35em")
-                .attr("text-anchor", "start")
-                .each(function(d) {
-                    const text = d3.select(this);
-                    const label = d.displayName === "non-armed stem"
-                        ? ["non-armed", "stem"]
-                        : [d.displayName];
 
-            label.forEach((line, i) => {
-                text.append("tspan")
-                    .attr("x", 6)
-                    .attr("dy", i === 0 ? -2 : "1.1em")
-                    .text(line);
-             });
-        });
-
-
-        function getMappedValue(field, value) {
-            const mappings = {
-                'stem_armed': {
-                    'armed': 'armed stem',
-                    'non-armed': 'non-armed stem'
-                },
-                'stem_solitary': {
-                    'solitary': 'solitary stem',
-                    'non-solitary': 'cluster stems'
-                }
-            };
-            return mappings[field]?.[value] || value;
-        }
+            // Helper for mapping data values to labels
+            function getMappedValue(field, value) {
+                const mappings = {
+                    'stem_armed': {
+                        'armed': 'armed stem',
+                        'non-armed': 'non-armed stem'
+                    },
+                    'stem_solitary': {
+                        'solitary': 'solitary stem',
+                        'non-solitary': 'cluster stems'
+                    }
+                };
+                return mappings[field]?.[value] || value;
+            }
 
             function getNodeText(field, value) {
                 if (field === "climbing" && value === "both"){
