@@ -103,28 +103,6 @@
             text-anchor: middle;
         }
 
-        .info-icon {
-            cursor: help;
-            font-size: 12px;
-            fill: #666;
-        }
-
-        .info-tooltip {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .info-tooltip.show {
-            opacity: 1;
-        }
-
         .link, .node rect {
             transition: all 0.2s ease;
         }
@@ -204,7 +182,7 @@
     </div>
     <div id="container">
         <div id="sankey-container">
-            <svg id="sankey" width="900" height="350"></svg>
+            <svg id="sankey" width="900" height="360"></svg>
         </div>
     </div>
 
@@ -287,26 +265,14 @@
             const validData = data.filter(d => d[field] != null);
             const values = validData.map(d => +d[field])
 
+            console.log(values)
+
             // Clear existing elements
             g.selectAll(".bar, .no-data-label").remove();
 
             // Update title based on context
             const title = g.select(".column-title")
                 .text(getHistogramTitle(field, context));
-
-            // Clear if no data
-            if (values.length === 0) {
-                console.log("I am here")
-                g.append("text")
-                    .attr("class", "no-data-label")
-                    .attr("x", histogramWidth/2)
-                    .attr("y", histogramHeight/2)
-                    .attr("text-anchor", "middle")
-                    .style("fill", "#666")
-                    .style("font-style", "italic")
-                    .text("No Data Available");
-                return;
-            }
 
             const x = d3.scaleLinear()
                 .domain([d3.min(values), d3.max(values)])
@@ -331,6 +297,7 @@
             var bins = histogram(values);
 
             const maxFrequency = d3.max(bins, d => d.length);
+            console.log(maxFrequency)
             const y = d3.scaleLinear()
                 .domain([0, maxFrequency])
                 .range([histogramHeight, 0]);
@@ -629,7 +596,7 @@
             label.forEach((line, i) => {
                 text.append("tspan")
                     .attr("x", 6)
-                    .attr("dy", i === 0 ? -2 : "1.2em")
+                    .attr("dy", i === 0 ? -2 : "1.1em")
                     .text(line);
              });
         });
@@ -650,6 +617,12 @@
         }
 
             function getNodeText(field, value) {
+                if (field === "climbing" && value === "both"){
+                    return `of palm tree species are <em>both climbing and non-climbing</em>.`;
+                }
+                if (field === "erect" && value === "both"){
+                    return `of palm tree species are <em>both erect and non-erect</em>.`;
+                }
                 const verb = field.startsWith('stem') ? 'have' : 'are';
                 return `of palm tree species ${verb} <em>${value}</em>.`;
             }
