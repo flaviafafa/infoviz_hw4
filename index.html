@@ -18,7 +18,7 @@
             align-items: center;
         }
 
-        #container{
+        #container {
             display: flex;
         }
 
@@ -48,7 +48,7 @@
         .link {
             fill: none;
             stroke-opacity: 0.4;
-            cursor: pointer;
+            cursor: default;
         }
 
         .link:hover {
@@ -71,13 +71,14 @@
             fill-opacity: 1;
         }
 
-        #node-tooltip, #link-tooltip {
+        #node-tooltip, 
+        #link-tooltip {
             background: #fff9e6;
             border: 2px solid #ffd700;
             border-radius: 6px;
             padding: 10px;
             font-family: 'Merriweather', serif;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.2s ease;
@@ -86,11 +87,13 @@
             font-size: 13px;
         }
 
-        #node-tooltip.show, #link-tooltip.show {
+        #node-tooltip.show, 
+        #link-tooltip.show {
             opacity: 1;
         }
 
-        #node-tooltip em, #link-tooltip em {
+        #node-tooltip em, 
+        #link-tooltip em {
             color: #2a7a3b;
             font-style: normal;
             font-weight: 700;
@@ -103,7 +106,8 @@
             text-anchor: middle;
         }
 
-        .link, .node rect {
+        .link, 
+        .node rect {
             transition: all 0.2s ease;
         }
 
@@ -137,8 +141,8 @@
             font-size: 11px;
         }
 
-        .subtitle{
-            color:#2a7a3b;
+        .subtitle {
+            color: #2a7a3b;
             font-weight: bold;
             margin: 0;
             font-size: 13px;
@@ -148,7 +152,8 @@
             font-size: 14px;
         }
 
-        .x-axis-label, .y-axis-label {
+        .x-axis-label, 
+        .y-axis-label {
             font-size: 11px;
         }
 
@@ -206,8 +211,17 @@
         const sankeyLayout = d3.sankey()
             .nodeWidth(90)
             .nodePadding(20)
-            .extent([[1, 1], [width - 1, height - 6]]);
+            .extent([[1, 1], [width - 1, height - 6]])
+            .nodeSort((a, b) => {
+
+                const aTotal = d3.sum(a.sourceLinks, l => l.value) + d3.sum(a.targetLinks, l => l.value);
+                const bTotal = d3.sum(b.sourceLinks, l => l.value) + d3.sum(b.targetLinks, l => l.value);
+                return bTotal - aTotal;
+            });
+
         const color = d3.scaleOrdinal(d3.schemeSet3);
+
+
 
         let fullData = [];
         let nodeTimeout, linkTimeout;
@@ -217,13 +231,17 @@
         const histogramWidth = 450 - histogramMargins.left - histogramMargins.right;
         const histogramHeight = 250 - histogramMargins.top - histogramMargins.bottom;
 
+        let nodeHovering = false;
+        let linkHovering = false;
+
+
         function prepareHistograms() {
             // Height histogram setup
             const heightSvg = d3.select("#height-histogram")
                 .attr("width", histogramWidth + histogramMargins.left + histogramMargins.right)
                 .attr("height", histogramHeight + histogramMargins.top + histogramMargins.bottom)
                 .append("g")
-                    .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
+                .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
 
             heightSvg.append("text")
                 .attr("class", "column-title")
@@ -236,7 +254,7 @@
                 .attr("width", histogramWidth + histogramMargins.left + histogramMargins.right)
                 .attr("height", histogramHeight + histogramMargins.top + histogramMargins.bottom)
                 .append("g")
-                    .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
+                .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
 
             diameterSvg.append("text")
                 .attr("class", "column-title")
@@ -246,8 +264,8 @@
         }
 
         function updateHistograms(data, context) {
-            updateHistogram(data, 'max_stem_height_m', '#height-histogram', context);
-            updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram', context);
+            updateHistogram(data, 'max_stem_height_m', '#height-histogram', context, '#10b981');
+            updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram', context, '#65a30d');
         }
 
         // Helper for mapping labels back to values
@@ -259,7 +277,7 @@
             return mappings[field]?.[displayValue] || displayValue;
         }   
 
-        function updateHistogram(data, field, selector, context) {
+        function updateHistogram(data, field, selector, context, theme_color) {
             const svg = d3.select(selector);
             const g = svg.select("g");
             const validData = data.filter(d => d[field] != null);
@@ -271,8 +289,36 @@
             g.selectAll(".bar, .no-data-label").remove();
 
             // Update title based on context
-            const title = g.select(".column-title")
-                .text(getHistogramTitle(field, context));
+            const baseTitle = field === 'max_stem_height_m'
+                ? "Max. Stem Height (m)"
+                : "Max. Stem Diameter (cm)";
+
+            const titleSelection = g.select(".column-title");
+            titleSelection.text(null);
+            titleSelection.selectAll("*").remove();
+
+            if (context) {
+                if (context.type === 'node') {
+                    titleSelection
+                        .append("tspan")
+                        .text(`${capitalizeFirst(context.value)} trees: `)
+                        .style("font-weight", "900")
+                        .style("fill", theme_color);
+                } else if (context.type === 'link') {
+                    titleSelection
+                        .append("tspan")
+                        .text(`${capitalizeFirst(context.source)} & ${capitalizeFirst(context.target)} trees: `)
+                        .style("font-weight", "900")
+                        .style("fill", theme_color);
+                }
+            }
+
+            titleSelection
+                .append("tspan")
+                .text(baseTitle)
+                .style("font-weight", "normal")
+                .style("fill", theme_color);
+
 
             const x = d3.scaleLinear()
                 .domain([d3.min(values), d3.max(values)])
@@ -342,32 +388,13 @@
                 .attr("transform", function(d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
                 .attr("width", function(d) { return d3.max([x(d.x1) - x(d.x0) - 1, 0]); })
                 .attr("height", function(d) { return histogramHeight - y(d.length); })
-                .style("fill", "#69b3a2")
+                .style("fill", theme_color)
                 .style("opacity", 0.8)
                 .attr("class", "bar")
         }
 
         function capitalizeFirst(str) {
             return str.charAt(0).toUpperCase() + str.slice(1);
-        }
-
-        // Helper function for dynamic titles
-        function getHistogramTitle(field, context) {
-            const baseTitle = field === 'max_stem_height_m' 
-                ? "Max. Stem Height (m)" 
-                : "Max. Stem Diameter (cm)";
-    
-            if (!context) return baseTitle;
-    
-            if (context.type === 'node') {
-                return capitalizeFirst(`${context.value} trees: ${baseTitle}`);
-            }
-    
-            if (context.type === 'link') {
-                return capitalizeFirst(`${context.source} & ${context.target} trees: ${baseTitle}`);
-            }
-    
-            return baseTitle;
         }
 
         function drawSankey() {
@@ -426,7 +453,9 @@
                 .attr("stroke-width", d => Math.max(1, d.width))
                 .on("mouseover", function(event, d) {
                     clearTimeout(linkTimeout);
+                    linkHovering = true;
                     linkTimeout = setTimeout(() => {
+                        linkHovering = false;
                         const connectedNodes = new Set([d.source, d.target]);
                         const connectedLinks = new Set([d]);
         
@@ -475,15 +504,15 @@
                             .style("left", `${event.pageX + 15}px`)
                             .style("top", `${event.pageY - 10}px`);
                     })
-                    .on("mouseout", function() {
+                    .on("mouseout", function () {
                         clearTimeout(linkTimeout);
-                        linkPaths.classed("highlight", false)
-                            .classed("dimmed", false);
-                        svg.selectAll(".node rect")
-                            .classed("highlight", false)
-                            .classed("dimmed", false);
+                        if (!linkHovering) {
+                            updateHistograms(fullData);
+                        }
+
                         linkTooltip.classed("show", false);
-                        updateHistograms(fullData);
+                        linkPaths.classed("highlight", false).classed("dimmed", false);
+                        svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
                     });
 
             const nodesGroup = svg.append("g")
@@ -499,10 +528,12 @@
                 .attr("fill", d => color(d.displayName))
                 .on("mouseover", function(event, d) {
                     clearTimeout(nodeTimeout);
+                    nodeHovering = true;
                     nodeTimeout = setTimeout(() => {
+                        nodeHovering = false;
                         const [field, value] = d.id.split(': ');
                         const count = fullData.filter(tree => {
-                        const treeValue = getMappedValue(field, tree[field]);
+                            const treeValue = getMappedValue(field, tree[field]);
                             return treeValue === value;
                         }).length;
                         const total = fullData.length;
@@ -573,13 +604,13 @@
             })
             .on("mouseout", function() {
                 clearTimeout(nodeTimeout);
-                linkPaths.classed("highlight", false)
-                    .classed("dimmed", false);
-                svg.selectAll(".node rect")
-                    .classed("highlight", false)
-                    .classed("dimmed", false);
+                if (!nodeHovering) {
+                    updateHistograms(fullData);
+                }
+ 
                 nodeTooltip.classed("show", false);
-                updateHistograms(fullData);
+                linkPaths.classed("highlight", false).classed("dimmed", false);
+                svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
             });
 
             nodesGroup.append("text")
