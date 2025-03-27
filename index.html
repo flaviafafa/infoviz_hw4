@@ -18,7 +18,7 @@
             align-items: center;
         }
 
-        #container{
+        #container {
             display: flex;
         }
 
@@ -48,7 +48,7 @@
         .link {
             fill: none;
             stroke-opacity: 0.4;
-            cursor: pointer;
+            cursor: default;
         }
 
         .link:hover {
@@ -71,13 +71,14 @@
             fill-opacity: 1;
         }
 
-        #node-tooltip, #link-tooltip {
+        #node-tooltip,
+        #link-tooltip {
             background: #fff9e6;
             border: 2px solid #ffd700;
             border-radius: 6px;
             padding: 10px;
             font-family: 'Merriweather', serif;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.2s ease;
@@ -86,11 +87,13 @@
             font-size: 13px;
         }
 
-        #node-tooltip.show, #link-tooltip.show {
+        #node-tooltip.show,
+        #link-tooltip.show {
             opacity: 1;
         }
 
-        #node-tooltip em, #link-tooltip em {
+        #node-tooltip em,
+        #link-tooltip em {
             color: #2a7a3b;
             font-style: normal;
             font-weight: 700;
@@ -125,7 +128,8 @@
             opacity: 1;
         }
 
-        .link, .node rect {
+        .link,
+        .node rect {
             transition: all 0.2s ease;
         }
 
@@ -159,8 +163,8 @@
             font-size: 11px;
         }
 
-        .subtitle{
-            color:#2a7a3b;
+        .subtitle {
+            color: #2a7a3b;
             font-weight: bold;
             margin: 0;
             font-size: 13px;
@@ -170,7 +174,8 @@
             font-size: 14px;
         }
 
-        .x-axis-label, .y-axis-label {
+        .x-axis-label,
+        .y-axis-label {
             font-size: 11px;
         }
 
@@ -215,8 +220,17 @@
         const sankeyLayout = d3.sankey()
             .nodeWidth(90)
             .nodePadding(20)
-            .extent([[1, 1], [width - 1, height - 6]]);
+            .extent([[1, 1], [width - 1, height - 6]])
+            .nodeSort((a, b) => {
+
+                const aTotal = d3.sum(a.sourceLinks, l => l.value) + d3.sum(a.targetLinks, l => l.value);
+                const bTotal = d3.sum(b.sourceLinks, l => l.value) + d3.sum(b.targetLinks, l => l.value);
+                return bTotal - aTotal;
+            });
+
         const color = d3.scaleOrdinal(d3.schemeSet3);
+
+
 
         let fullData = [];
         let nodeTimeout, linkTimeout;
@@ -226,18 +240,21 @@
         const histogramWidth = 450 - histogramMargins.left - histogramMargins.right;
         const histogramHeight = 260 - histogramMargins.top - histogramMargins.bottom;
 
+        let nodeHovering = false;
+        let linkHovering = false;
+
         function prepareHistograms() {
             // Height histogram setup
             const heightSvg = d3.select("#height-histogram")
                 .attr("width", histogramWidth + histogramMargins.left + histogramMargins.right)
                 .attr("height", histogramHeight + histogramMargins.top + histogramMargins.bottom)
                 .append("g")
-                    .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
+                .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
 
             heightSvg.append("text")
                 .attr("class", "column-title")
                 .attr("x", histogramWidth / 2)
-                .attr("y", -5)
+                .attr("y", -7)
                 .text("Max. Stem Height (m)");
 
             // Diameter histogram setup
@@ -245,19 +262,20 @@
                 .attr("width", histogramWidth + histogramMargins.left + histogramMargins.right)
                 .attr("height", histogramHeight + histogramMargins.top + histogramMargins.bottom)
                 .append("g")
-                    .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
+                .attr("transform", `translate(${histogramMargins.left},${histogramMargins.top})`);
 
             diameterSvg.append("text")
                 .attr("class", "column-title")
                 .attr("x", histogramWidth / 2)
-                .attr("y", -5)
+                .attr("y", -7)
                 .text("Max. Stem Diameter (cm)");
         }
 
         function updateHistograms(data, context) {
-            updateHistogram(data, 'max_stem_height_m', '#height-histogram', context);
-            updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram', context);
+            updateHistogram(data, 'max_stem_height_m', '#height-histogram', context, '#69b3a2');
+            updateHistogram(data, 'max_stem_dia_cm', '#diameter-histogram', context, '#4c8b7e');
         }
+
 
         // Helper for mapping labels back to values
         function getRawValue(field, displayValue) {
@@ -266,28 +284,53 @@
                 'stem_solitary': { 'solitary stem': 'solitary', 'cluster stems': 'non-solitary' }
             };
             return mappings[field]?.[displayValue] || displayValue;
-        }   
+        }
 
-        function updateHistogram(data, field, selector, context) {
+        function updateHistogram(data, field, selector, context, barColor = "#69b3a2") {
             const svg = d3.select(selector);
             const g = svg.select("g");
             const validData = data.filter(d => d[field] != null);
             const values = validData.map(d => +d[field])
 
-            // Clear existing elements
             g.selectAll(".bar, .no-data-label").remove();
 
-            // Update title based on context
-            const title = g.select(".column-title")
-                .text(getHistogramTitle(field, context));
+            const baseTitle = field === 'max_stem_height_m'
+                ? "Max. Stem Height (m)"
+                : "Max. Stem Diameter (cm)";
+
+            const titleSelection = g.select(".column-title");
+            titleSelection.text(null);
+            titleSelection.selectAll("*").remove();
+
+            if (context) {
+                if (context.type === 'node') {
+                    titleSelection
+                        .append("tspan")
+                        .text(`${capitalizeFirst(context.value)} trees: `)
+                        .style("font-weight", "900")
+                        .style("fill", barColor);
+                } else if (context.type === 'link') {
+                    titleSelection
+                        .append("tspan")
+                        .text(`${capitalizeFirst(context.source)} & ${capitalizeFirst(context.target)} trees: `)
+                        .style("font-weight", "900")
+                        .style("fill", barColor);
+                }
+            }
+
+            titleSelection
+                .append("tspan")
+                .text(baseTitle)
+                .style("font-weight", "normal")
+                .style("fill", barColor);
 
             // Clear if no data
             if (values.length === 0) {
                 console.log("I am here")
                 g.append("text")
                     .attr("class", "no-data-label")
-                    .attr("x", histogramWidth/2)
-                    .attr("y", histogramHeight/2)
+                    .attr("x", histogramWidth / 2)
+                    .attr("y", histogramHeight / 2)
                     .attr("text-anchor", "middle")
                     .style("fill", "#666")
                     .style("font-style", "italic")
@@ -299,7 +342,6 @@
                 .domain([d3.min(values), d3.max(values)])
                 .range([0, histogramWidth]);
 
-            // Update X axis
             const xAxis = d3.axisBottom(x);
             let xAxisGroup = g.select(".x-axis");
             if (!xAxisGroup.empty()) {
@@ -314,7 +356,7 @@
             var histogram = d3.histogram()
                 .domain(x.domain())
                 .thresholds(x.ticks(40));
-            
+
             var bins = histogram(values);
 
             const maxFrequency = d3.max(bins, d => d.length);
@@ -334,11 +376,10 @@
                     .call(yAxis);
             }
 
-            // Add axis title
             if (g.select(".x-axis-label").empty()) {
                 g.append("text")
                     .attr("class", "x-axis-label")
-                    .attr("transform", `translate(${histogramWidth/2},${histogramHeight+35})`)
+                    .attr("transform", `translate(${histogramWidth / 2},${histogramHeight + 35})`)
                     .style("text-anchor", "middle")
                     .text(field === 'max_stem_height_m' ? "Meters" : "Centimeters");
             }
@@ -348,7 +389,7 @@
                     .attr("class", "y-axis-label")
                     .attr("transform", "rotate(-90)")
                     .attr("y", -histogramMargins.left + 10)
-                    .attr("x", -histogramHeight/2)
+                    .attr("x", -histogramHeight / 2)
                     .style("text-anchor", "middle")
                     .text("Frequency");
             }
@@ -359,10 +400,10 @@
                 .enter()
                 .append("rect")
                 .attr("x", 1)
-                .attr("transform", function(d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
-                .attr("width", function(d) { return d3.max([x(d.x1) - x(d.x0) - 1, 0]); })
-                .attr("height", function(d) { return histogramHeight - y(d.length); })
-                .style("fill", "#69b3a2")
+                .attr("transform", function (d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
+                .attr("width", function (d) { return d3.max([x(d.x1) - x(d.x0) - 1, 0]); })
+                .attr("height", function (d) { return histogramHeight - y(d.length); })
+                .style("fill", barColor)
                 .style("opacity", 0.8)
                 .attr("class", "bar")
         }
@@ -371,24 +412,6 @@
             return str.charAt(0).toUpperCase() + str.slice(1);
         }
 
-        // Helper function for dynamic titles
-        function getHistogramTitle(field, context) {
-            const baseTitle = field === 'max_stem_height_m' 
-                ? "Max. Stem Height (m)" 
-                : "Max. Stem Diameter (cm)";
-    
-            if (!context) return baseTitle;
-    
-            if (context.type === 'node') {
-                return capitalizeFirst(`${context.value} trees: ${baseTitle}`);
-            }
-    
-            if (context.type === 'link') {
-                return capitalizeFirst(`${context.source} & ${context.target} trees: ${baseTitle}`);
-            }
-    
-            return baseTitle;
-        }
 
         function drawSankey() {
             svg.selectAll("*").remove();
@@ -397,7 +420,7 @@
 
             function addLink(sourceRaw, targetRaw, sourceType, targetType) {
                 if (!sourceRaw || !targetRaw) return;
-                
+
                 const mapValues = (type, value) => {
                     if (type === 'stem_armed') return value === 'armed' ? 'armed stem' : 'non-armed stem';
                     if (type === 'stem_solitary') return value === 'solitary' ? 'solitary stem' : 'cluster stems';
@@ -444,12 +467,16 @@
                 .attr("d", d3.sankeyLinkHorizontal())
                 .attr("stroke", d => color(d.source.displayName))
                 .attr("stroke-width", d => Math.max(1, d.width))
-                .on("mouseover", function(event, d) {
+                .on("mouseover", function (event, d) {
                     clearTimeout(linkTimeout);
+                    linkHovering = true;
+
                     linkTimeout = setTimeout(() => {
+                        linkHovering = false;
+
                         const connectedNodes = new Set([d.source, d.target]);
                         const connectedLinks = new Set([d]);
-        
+
                         linkPaths.classed("highlight", l => connectedLinks.has(l))
                             .classed("dimmed", l => !connectedLinks.has(l));
                         svg.selectAll(".node rect")
@@ -465,46 +492,45 @@
                             .style("left", `${event.pageX + 15}px`)
                             .style("top", `${event.pageY - 10}px`)
                             .html(`
-                                <div style="color: #856404; font-weight: 700;">${percentage}%</div>
-                                <div style="font-size: 0.9em;">${getLinkText(sourceValue, targetValue)}</div>
-                            `)
+                <div style="color: #856404; font-weight: 700;">${percentage}%</div>
+                <div style="font-size: 0.9em;">${getLinkText(sourceValue, targetValue)}</div>
+            `)
                             .classed("show", true);
 
-                            const sourceField = d.source.id.split(': ')[0];
-                            const targetField = d.target.id.split(': ')[0];
-                            const sourceDisplayValue = d.source.displayName;
-                            const targetDisplayValue = d.target.displayName;
+                        const sourceField = d.source.id.split(': ')[0];
+                        const targetField = d.target.id.split(': ')[0];
+                        const rawSourceValue = getRawValue(sourceField, sourceValue);
+                        const rawTargetValue = getRawValue(targetField, targetValue);
 
-                            // Convert display values to raw values
-                            const rawSourceValue = getRawValue(sourceField, sourceDisplayValue);
-                            const rawTargetValue = getRawValue(targetField, targetDisplayValue);
+                        const subset = fullData.filter(tree =>
+                            tree[sourceField] === rawSourceValue &&
+                            tree[targetField] === rawTargetValue
+                        );
 
-                            const subset = fullData.filter(tree => 
-                                tree[sourceField] === rawSourceValue && 
-                                tree[targetField] === rawTargetValue
-                            );
-                            updateHistograms(subset, {
-                                type: 'link',
-                                source: sourceDisplayValue,
-                                target: targetDisplayValue
-                            });
-                        }, tooltipDelay);
-                    })
-                    .on("mousemove", function(event) {
-                        linkTooltip
-                            .style("left", `${event.pageX + 15}px`)
-                            .style("top", `${event.pageY - 10}px`);
-                    })
-                    .on("mouseout", function() {
-                        clearTimeout(linkTimeout);
-                        linkPaths.classed("highlight", false)
-                            .classed("dimmed", false);
-                        svg.selectAll(".node rect")
-                            .classed("highlight", false)
-                            .classed("dimmed", false);
-                        linkTooltip.classed("show", false);
+                        updateHistograms(subset, {
+                            type: 'link',
+                            source: sourceValue,
+                            target: targetValue
+                        });
+                    }, tooltipDelay);
+                })
+                .on("mousemove", function (event) {
+                    linkTooltip
+                        .style("left", `${event.pageX + 15}px`)
+                        .style("top", `${event.pageY - 10}px`);
+                })
+                .on("mouseout", function () {
+                    clearTimeout(linkTimeout);
+                    if (!linkHovering) {
                         updateHistograms(fullData);
-                    });
+                    }
+
+                    linkTooltip.classed("show", false);
+                    linkPaths.classed("highlight", false).classed("dimmed", false);
+                    svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
+                });
+
+
 
             const nodesGroup = svg.append("g")
                 .selectAll("g")
@@ -517,124 +543,127 @@
                 .attr("height", d => d.y1 - d.y0)
                 .attr("width", d => d.x1 - d.x0)
                 .attr("fill", d => color(d.displayName))
-                .on("mouseover", function(event, d) {
+                .on("mouseover", function (event, d) {
                     clearTimeout(nodeTimeout);
+                    nodeHovering = true;
+
                     nodeTimeout = setTimeout(() => {
+                        nodeHovering = false;
+
                         const [field, value] = d.id.split(': ');
                         const count = fullData.filter(tree => {
-                        const treeValue = getMappedValue(field, tree[field]);
+                            const treeValue = getMappedValue(field, tree[field]);
                             return treeValue === value;
                         }).length;
                         const total = fullData.length;
                         const percent = ((count / total) * 100).toFixed(1);
 
-                        // Collect all related nodes and links
                         const relatedNodes = new Set([d]);
                         const relatedLinks = new Set();
 
                         function traverseUp(node) {
                             node.targetLinks.forEach(link => {
-                            if (!relatedLinks.has(link)) {
-                                relatedLinks.add(link);
-                                const sourceNode = link.source;
-                                if (!relatedNodes.has(sourceNode)) {
-                                    relatedNodes.add(sourceNode);
-                                    traverseUp(sourceNode);
+                                if (!relatedLinks.has(link)) {
+                                    relatedLinks.add(link);
+                                    const sourceNode = link.source;
+                                    if (!relatedNodes.has(sourceNode)) {
+                                        relatedNodes.add(sourceNode);
+                                        traverseUp(sourceNode);
+                                    }
                                 }
-                            }
                             });
                         }
 
                         function traverseDown(node) {
                             node.sourceLinks.forEach(link => {
-                            if (!relatedLinks.has(link)) {
-                                relatedLinks.add(link);
-                                const targetNode = link.target;
-                                if (!relatedNodes.has(targetNode)) {
-                                    relatedNodes.add(targetNode);
-                                    traverseDown(targetNode);
+                                if (!relatedLinks.has(link)) {
+                                    relatedLinks.add(link);
+                                    const targetNode = link.target;
+                                    if (!relatedNodes.has(targetNode)) {
+                                        relatedNodes.add(targetNode);
+                                        traverseDown(targetNode);
+                                    }
                                 }
-                            }
                             });
                         }
 
-                    traverseUp(d);
-                    traverseDown(d);
+                        traverseUp(d);
+                        traverseDown(d);
 
-                    // Highlight related elements
-                    linkPaths.classed("highlight", l => relatedLinks.has(l))
-                        .classed("dimmed", l => !relatedLinks.has(l));
-                    svg.selectAll(".node rect")
-                        .classed("highlight", n => relatedNodes.has(n))
-                        .classed("dimmed", n => !relatedNodes.has(n));
+                        linkPaths.classed("highlight", l => relatedLinks.has(l))
+                            .classed("dimmed", l => !relatedLinks.has(l));
+                        svg.selectAll(".node rect")
+                            .classed("highlight", n => relatedNodes.has(n))
+                            .classed("dimmed", n => !relatedNodes.has(n));
 
+                        nodeTooltip
+                            .style("left", `${event.pageX + 15}px`)
+                            .style("top", `${event.pageY - 10}px`)
+                            .html(`
+                <div style="color: #856404; font-weight: 700;">${percent}%</div>
+                <div style="font-size: 0.9em;">${getNodeText(field, value)}</div>
+            `)
+                            .classed("show", true);
+
+                        const rawValue = getRawValue(field, value);
+                        const subset = fullData.filter(tree => tree[field] === rawValue);
+
+                        updateHistograms(subset, {
+                            type: 'node',
+                            value: value,
+                            field: field
+                        });
+                    }, tooltipDelay);
+                })
+                .on("mousemove", function (event) {
                     nodeTooltip
                         .style("left", `${event.pageX + 15}px`)
-                        .style("top", `${event.pageY - 10}px`)
-                        .html(`
-                            <div style="color: #856404; font-weight: 700;">${percent}%</div>
-                            <div style="font-size: 0.9em;">${getNodeText(field, value)}</div>
-                        `)
-                        .classed("show", true);
+                        .style("top", `${event.pageY - 10}px`);
+                })
+                .on("mouseout", function () {
+                    clearTimeout(nodeTimeout);
+                    if (!nodeHovering) {
+                        updateHistograms(fullData);
+                    }
 
-                    const rawValue = getRawValue(field, value);
-                    const subset = fullData.filter(tree => tree[field] === rawValue);
-                    updateHistograms(subset, { 
-                        type: 'node',
-                        value: value,
-                        field: field
-                    });
-                }, tooltipDelay);
-            })
-            .on("mousemove", function(event) {
-                nodeTooltip
-                    .style("left", `${event.pageX + 15}px`)
-                    .style("top", `${event.pageY - 10}px`);
-            })
-            .on("mouseout", function() {
-                clearTimeout(nodeTimeout);
-                linkPaths.classed("highlight", false)
-                    .classed("dimmed", false);
-                svg.selectAll(".node rect")
-                    .classed("highlight", false)
-                    .classed("dimmed", false);
-                nodeTooltip.classed("show", false);
-                updateHistograms(fullData);
-            });
+                    nodeTooltip.classed("show", false);
+                    linkPaths.classed("highlight", false).classed("dimmed", false);
+                    svg.selectAll(".node rect").classed("highlight", false).classed("dimmed", false);
+                });
 
             nodesGroup.append("text")
                 .attr("x", 6)
                 .attr("y", d => (d.y1 - d.y0) / 2)
                 .attr("dy", "0.35em")
                 .attr("text-anchor", "start")
-                .each(function(d) {
+                .each(function (d) {
                     const text = d3.select(this);
                     const label = d.displayName === "non-armed stem"
                         ? ["non-armed", "stem"]
                         : [d.displayName];
 
-            label.forEach((line, i) => {
-                text.append("tspan")
-                    .attr("x", 6)
-                    .attr("dy", i === 0 ? -2 : "1.2em")
-                    .text(line);
-             });
-        });
+                    label.forEach((line, i) => {
+                        text.append("tspan")
+                            .attr("x", 6)
+                            .attr("dy", i === 0 ? -2 : "1.2em")
+                            .text(line);
+                    });
+                });
 
 
-        function getMappedValue(field, value) {
-            const mappings = {
-                'stem_armed': {
-                    'armed': 'armed stem',
-                    'non-armed': 'non-armed stem'
-                },
-                'stem_solitary': {
-                    'solitary': 'solitary stem',
-                    'non-solitary': 'cluster stems'
-                }
-            };
-            return mappings[field]?.[value] || value;
-        }
+            function getMappedValue(field, value) {
+                const mappings = {
+                    'stem_armed': {
+                        'armed': 'armed stem',
+                        'non-armed': 'non-armed stem'
+                    },
+                    'stem_solitary': {
+                        'solitary': 'solitary stem',
+                        'non-solitary': 'cluster stems'
+                    }
+                };
+                return mappings[field]?.[value] || value;
+            }
 
             function getNodeText(field, value) {
                 const verb = field.startsWith('stem') ? 'have' : 'are';
@@ -656,4 +685,5 @@
         });
     </script>
 </body>
+
 </html>
